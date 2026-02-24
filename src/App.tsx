@@ -43,26 +43,65 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
+    try {
+      if (file.name.endsWith('.zip')) {
+        const zip = await JSZip.loadAsync(file);
+        
+        // Read JSON project file
+        const jsonFile = zip.file('storyboard-project.json');
+        if (!jsonFile) {
+          throw new Error('Arquivo storyboard-project.json não encontrado no ZIP.');
+        }
+        
+        const content = await jsonFile.async('string');
         const projectData = JSON.parse(content);
+        
         if (projectData.style !== undefined) setStyle(projectData.style);
         if (projectData.story !== undefined) setStory(projectData.story);
         if (projectData.casting !== undefined) setCasting(projectData.casting);
-        if (projectData.scenes !== undefined) setScenes(projectData.scenes);
-      } catch (err) {
-        console.error('Failed to parse project file', err);
-        alert('Erro ao importar o projeto. Arquivo inválido.');
+        
+        // Restore images from the zip if they exist
+        if (projectData.scenes !== undefined) {
+          const loadedScenes: Scene[] = projectData.scenes;
+          
+          for (const scene of loadedScenes) {
+            const imageFile = zip.file(`images/cena_${scene.sceneNumber}.png`);
+            if (imageFile) {
+              const base64Data = await imageFile.async('base64');
+              scene.imageUrl = `data:image/png;base64,${base64Data}`;
+            }
+          }
+          
+          setScenes(loadedScenes);
+        }
+      } else {
+        // Fallback for older JSON exports
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const content = e.target?.result as string;
+            const projectData = JSON.parse(content);
+            if (projectData.style !== undefined) setStyle(projectData.style);
+            if (projectData.story !== undefined) setStory(projectData.story);
+            if (projectData.casting !== undefined) setCasting(projectData.casting);
+            if (projectData.scenes !== undefined) setScenes(projectData.scenes);
+          } catch (err) {
+            console.error('Failed to parse project file', err);
+            alert('Erro ao importar o projeto. Arquivo JSON inválido.');
+          }
+        };
+        reader.readAsText(file);
       }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
+    } catch (err) {
+      console.error('Failed to import project', err);
+      alert('Erro ao importar o projeto. Arquivo inválido ou corrompido.');
+    } finally {
+      event.target.value = '';
+    }
   };
 
   const handleAddCharacter = () => {
@@ -225,7 +264,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <input 
               type="file" 
-              accept=".json" 
+              accept=".json,.zip" 
               ref={fileInputRef} 
               onChange={handleImport} 
               className="hidden" 
