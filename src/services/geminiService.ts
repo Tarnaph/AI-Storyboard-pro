@@ -1,6 +1,28 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Scene, Character } from "../types";
 
+async function withRetry<T>(operation: () => Promise<T>, maxRetries = 3, baseDelayMs = 2000): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      const isRateLimit = error?.status === 429 || 
+                          error?.status === 'RESOURCE_EXHAUSTED' ||
+                          error?.message?.includes('429') || 
+                          error?.message?.includes('quota');
+                          
+      if (isRateLimit && i < maxRetries - 1) {
+        const delay = baseDelayMs * Math.pow(2, i);
+        console.warn(`Rate limit hit, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error("Max retries reached");
+}
+
 export async function generateStoryboard(style: string, story: string): Promise<Scene[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -22,7 +44,7 @@ Siga estes passos exatamente:
 Texto de Entrada:
 ${story}`;
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
     contents: prompt,
     config: {
@@ -53,7 +75,7 @@ ${story}`;
         },
       },
     },
-  });
+  }));
 
   const text = response.text;
   if (!text) {
@@ -101,7 +123,7 @@ export async function generateImageForScene(prompt: string, style: string, chara
 
   parts.push({ text: fullPrompt });
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-2.5-flash-image",
     contents: {
       parts: parts,
@@ -111,7 +133,7 @@ export async function generateImageForScene(prompt: string, style: string, chara
         aspectRatio: "16:9",
       },
     },
-  });
+  }));
 
   for (const part of response.candidates?.[0]?.content?.parts || []) {
     if (part.inlineData) {
@@ -138,10 +160,10 @@ Trecho da Cena: "${textExcerpt}"
   }
   prompt += `\nDescreva composição precisa, ângulos de câmera, expressões, poses, ambiente, efeitos e o estilo escolhido. Retorne APENAS o prompt visual em inglês, sem explicações adicionais.`;
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: "gemini-3.1-pro-preview",
     contents: prompt,
-  });
+  }));
 
   return response.text || "";
 }

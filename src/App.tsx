@@ -164,6 +164,8 @@ export default function App() {
     for (let i = 0; i < scenes.length; i++) {
       if (!scenes[i].imageUrl && !scenes[i].isGeneratingImage && scenes[i].visualPrompt) {
         await handleGenerateImage(i);
+        // Add a small delay to avoid hitting rate limits too quickly
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
   };
@@ -172,6 +174,8 @@ export default function App() {
     for (let i = 0; i < scenes.length; i++) {
       if (!scenes[i].visualPrompt) {
         await handleGeneratePromptForScene(i);
+        // Add a small delay to avoid hitting rate limits too quickly
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
   };
